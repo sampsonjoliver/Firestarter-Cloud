@@ -33,8 +33,23 @@ var s3 = new AWS.S3();
  
 exports.resizeHandler = function(context, data) {
     var urlString = "https://firebasestorage.googleapis.com/v0/b/" + data.bucket + "/o/" + data.name.replace(/\//, '%2F') + "?alt=media&token=" + data.metadata.firebaseStorageDownloadTokens;
+    var mediaLink = data.mediaLink
+    
     var bucket = gcs.bucket(data.bucket)
     var file = bucket.file(data.name)
+
+    // Infer the image type.
+    var decodedName = decodeURIComponent(data.name.replace(/\+/g, " "))
+    var typeMatch = decodedName.match(/\.([^.]*)$/);
+    if (!typeMatch) {
+        callback("Could not determine the image type.");
+        return;
+    }
+    var imageType = typeMatch[1];
+    if (imageType != "jpg" && imageType != "png") {
+        callback('Unsupported image type: ${imageType}');
+        return;
+    }
     
     async.waterfall([
         function download(callback) {
@@ -75,6 +90,10 @@ exports.resizeHandler = function(context, data) {
                     callback(null)
                 }
             })
+        },
+        function saveToFirebase(callback) {
+            // todo save the mediaLink to a record in Firebase
+            // Need to also infer the channel the image is from 
         }], 
         function(err) {
             if (err) {
