@@ -1,0 +1,19 @@
+{
+  "name": "firestarter-cloud",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sampsonjoliver/Firestarter-Cloud.git"
+  },
+  "author": "Sampson J Oliver",
+  "license": "GPL-3.0",
+  "bugs": {
+    "url": "https://github.com/sampsonjoliver/Firestarter-Cloud/issues"
+  },
+  "homepage": "https://github.com/sampsonjoliver/Firestarter-Cloud#readme"
+}
