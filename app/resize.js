@@ -6,6 +6,9 @@ var gcloud = require('gcloud')({
   projectId: process.env.GCP_PROJECT,
 });
 
+// Get GCS, Cloud Vision API
+var gcs = gcloud.storage();
+
 var async = require('async');
 var gm = require('gm').subClass({ imageMagick: true }); // Enable ImageMagick integration.
 var util = require('util');
@@ -21,20 +24,17 @@ firebase.initializeApp({
   databaseURL: "<your-database-url>"
 });
 
-// Get GCS, Cloud Vision API
-var gcs = gcloud.storage()
-
 // constants
 var MAX_WIDTH  = 100;
 var MAX_HEIGHT = 100;
 
-// get reference to S3 client 
-var s3 = new AWS.S3();
- 
+var POSTFIX = "-thumb";
+
 exports.resizeHandler = function(context, data) {
     var urlString = "https://firebasestorage.googleapis.com/v0/b/" + data.bucket + "/o/" + data.name.replace(/\//, '%2F') + "?alt=media&token=" + data.metadata.firebaseStorageDownloadTokens;
+    var dstUrlString = "https://firebasestorage.googleapis.com/v0/b/" + data.bucket + "/o/" + (data.name + POSTFIX).replace(/\//, '%2F') + "?alt=media&token=" + data.metadata.firebaseStorageDownloadTokens;
     var mediaLink = data.mediaLink
-    
+
     var bucket = gcs.bucket(data.bucket)
     var file = bucket.file(data.name)
 
@@ -50,15 +50,21 @@ exports.resizeHandler = function(context, data) {
         callback('Unsupported image type: ${imageType}');
         return;
     }
-    
+
     async.waterfall([
         function download(callback) {
-            file.download().then(function(data) {
-                var contents = data[0]
-                callback(null, contents)
-            })
+            Promise.all([
+              file.download(),
+              file.getMetadata();
+          ]).then(function(fileData, metadata) {
+            var contents = data[0]
+            var metadata = data[0];
+            callback(null, contents, metadata)
+          }, function(err) {
+            callback(err)
+          })
         },
-        function transformImage(image, callback) {
+        function transformImage(image, metadata, callback) {
             gm(image).size(function(err, size) {
                 // Infer the scaling factor to avoid stretching the image unnaturally.
                 var scalingFactor = Math.min(
@@ -74,27 +80,36 @@ exports.resizeHandler = function(context, data) {
                         if (err) {
                             callback(err);
                         } else {
-                            callback(null, response.ContentType, buffer);
+                            callback(null, response.ContentType, buffer, metadata);
                         }
                     });
             });
         },
-        function upload(contentType, resizedImageBuffer, callback) {
+        function upload(contentType, resizedImageBuffer, metadata, callback) {
             // Stream the transformed image to a different S3 bucket.
-            var resizedFile = bucket.file(data.name + '-thumb')
+            var resizedFile = bucket.file(data.name + POSTFIX)
 
-            file.save(resizedImageBuffer, function(err) {
-                if (err) {
-                    callback(err)
-                } else {
-                    callback(null)
-                }
-            })
+            file.save(resizedImageBuffer, {
+                  metadata: metadata,
+                  predefinedAcl: "publicRead"
+                }, function(err) {
+                    if (err) {
+                        callback(err)
+                    } else {
+                        callback(null, metadata)
+                    }
+                })
         },
-        function saveToFirebase(callback) {
+        function saveToFirebase(metadata, callback) {
             // todo save the mediaLink to a record in Firebase
-            // Need to also infer the channel the image is from 
-        }], 
+            // Need to also infer the channel the image is from
+            firebase.database().ref("/images/").push().set({
+              uri: urlString,
+              mediaLink: mediaLink,
+              thumbUrl: dstUrlString,
+              metadata: metadata
+            })
+        }],
         function(err) {
             if (err) {
                 console.error(
